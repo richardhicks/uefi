@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 1.0
+.VERSION 1.1
 
 .GUID 7c06efd4-2530-487d-b92c-d5874d0b53b3
 
@@ -16,20 +16,23 @@
 
 .PROJECTURI https://github.com/richardhicks/uefi/
 
-.TAGS UEFI, SecureBoot, Certificates, PK, KEK
+.TAGS UEFI, SecureBoot, Certificates, PK, KEK, DB
 
 #>
 
 <#
 
 .SYNOPSIS
-    Reads Platform Key (PK) and Key Exchange Key (KEK) certificates from UEFI.
+    Reads Platform Key (PK), Key Exchange Key (KEK), and signature database (DB) certificates from UEFI.
 
 .DESCRIPTION
-    This script retrieves and displays Secure Boot certificates (PK and KEK) from UEFI firmware and optionally saves them to files.
+    This script retrieves and displays Secure Boot certificates (PK, KEK, and DB) from UEFI firmware and optionally saves them to files.
+
+.PARAMETER CertificateType
+    Specifies which certificate type(s) to retrieve. Valid values are 'All', 'PK', 'KEK', and 'DB'. Use 'All' to retrieve all certificate types, or specify individual types. Multiple values can be specified as an array. If not specified, 'All' is used by default.
 
 .PARAMETER OutFile
-    Switch to enable saving certificates to files in base64 format. Files are named pkcert.cer and kekcert.cer (with numeric suffixes if multiple certificates exist).
+    Switch to enable saving certificates to files in base64 format. Files are named pkcert.cer, kekcert.cer, and dbcert.cer (with numeric suffixes if multiple certificates exist).
 
 .PARAMETER OutPath
     Optional path to a folder where certificates will be saved. If not specified when using -OutFile, files are saved to the script's directory.
@@ -37,17 +40,37 @@
 .EXAMPLE
     .\Get-UEFICertificate.ps1
 
-    Returns certificate objects without saving to files.
+    Returns all certificate objects (PK, KEK, and DB) without saving to files.
+
+.EXAMPLE
+    .\Get-UEFICertificate.ps1 -CertificateType All
+
+    Explicitly returns all certificate objects (PK, KEK, and DB) without saving to files.
+
+.EXAMPLE
+    .\Get-UEFICertificate.ps1 -CertificateType PK
+
+    Returns only the Platform Key (PK) certificate.
+
+.EXAMPLE
+    .\Get-UEFICertificate.ps1 -CertificateType PK, KEK
+
+    Returns only the PK and KEK certificates.
+
+.EXAMPLE
+    .\Get-UEFICertificate.ps1 -CertificateType DB -OutFile
+
+    Returns only the signature database (DB) certificates and saves them as base64-encoded .cer files in the script's directory.
 
 .EXAMPLE
     .\Get-UEFICertificate.ps1 -OutFile
 
-    Returns certificate objects and saves them as base64-encoded .cer files in the script's directory.
+    Returns all certificate objects and saves them as base64-encoded .cer files in the script's directory.
 
 .EXAMPLE
     .\Get-UEFICertificate.ps1 -OutFile -OutPath 'C:\Temp\UEFICertificates'
 
-    Returns certificate objects and saves them as base64-encoded .cer files in the specified folder.
+    Returns all certificate objects and saves them as base64-encoded .cer files in the specified folder.
 
 .INPUTS
     None.
@@ -59,9 +82,9 @@
     https://github.com/richardhicks/uefi/Get-UEFICertificate.ps1
 
 .NOTES
-    Version:        1.0
+    Version:        1.1
     Creation Date:  November 13, 2025
-    Last Updated:   November 13, 2025
+    Last Updated:   November 15, 2025
     Author:         Richard Hicks
     Organization:   Richard M. Hicks Consulting, Inc.
     Contact:        rich@richardhicks.com
@@ -71,10 +94,14 @@
 
 [CmdletBinding()]
 
-Param(
+Param (
 
     [Parameter()]
+    [ValidateSet('All', 'PK', 'KEK', 'DB')]
+    [Alias('Type')]
+    [String[]]$CertificateType = 'All',
     [Switch]$OutFile,
+    [Parameter(Position = 0)]
     [String]$OutPath
 
 )
@@ -85,7 +112,7 @@ Param(
 # Parse ESL (EFI Signature List) format
 Function ConvertFrom-SignatureList {
 
-    Param(
+    Param (
 
         [Byte[]]$Data
 
@@ -182,7 +209,7 @@ Function ConvertFrom-SignatureList {
 # Convert certificate data to PEM format
 Function ConvertTo-PemFormat {
 
-    Param(
+    Param (
 
         [Byte[]]$CertificateData
 
@@ -299,15 +326,32 @@ Try {
     $Results = @()
     $PkCount = 0
     $KekCount = 0
+    $DbCount = 0
     $SavedFiles = @()
 
-    # Define certificates to retrieve
-    $CertTypes = @(
+    # Define all available certificates
+    $AllCertTypes = @(
 
         @{ Name = 'PK'; Description = 'Platform Key'; VariableName = 'pk' }
         @{ Name = 'KEK'; Description = 'Key Exchange Key'; VariableName = 'kek' }
+        @{ Name = 'DB'; Description = 'Signature Database'; VariableName = 'db' }
 
     )
+
+    # Filter based on CertificateType parameter
+    If ($CertificateType -contains 'All') {
+
+        $CertTypes = $AllCertTypes
+
+    }
+
+    Else {
+
+        $CertTypes = $AllCertTypes | Where-Object { $CertificateType -contains $_.Name }
+
+    }
+
+    Write-Verbose "Retrieving certificate types: $($CertTypes.Name -join ', ')"
 
     ForEach ($CertType in $CertTypes) {
 
@@ -432,7 +476,7 @@ Try {
 
                 $ResultObj = [PSCustomObject]@{
 
-                    Type            = $CertType.Name
+                    Type            = $CertType.Name.ToUpper()
                     Description     = $CertType.Description
                     Index           = $SigIndex
                     SignatureType   = $Sig.SignatureType
@@ -452,7 +496,7 @@ Try {
                 # Add Save method
                 $ResultObj | Add-Member -MemberType ScriptMethod -Name 'SaveToFile' -Value {
 
-                    Param(
+                    Param (
 
                         [String]$Path
 
@@ -502,7 +546,7 @@ Try {
 
                     }
 
-                    Else {
+                    ElseIf ($CertType.Name -eq 'KEK') {
 
                         $KekCount++
                         $Filename = If ($KekCount -eq 1) {
@@ -514,6 +558,23 @@ Try {
                         Else {
 
                             "kekcert$KekCount.cer"
+
+                        }
+
+                    }
+
+                    Else {
+
+                        $DbCount++
+                        $Filename = If ($DbCount -eq 1) {
+
+                            'dbcert.cer'
+
+                        }
+
+                        Else {
+
+                            "dbcert$DbCount.cer"
 
                         }
 
@@ -579,8 +640,8 @@ Catch {
 # SIG # Begin signature block
 # MIIf2gYJKoZIhvcNAQcCoIIfyzCCH8cCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCAxbqCPTa9PMkhg
-# qklqsjN/Jx5DESp2LiyJf4Gzca7RVqCCGpkwggNZMIIC36ADAgECAhAPuKdAuRWN
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCAmv83lTe5tRVJj
+# wTbLQ5y8e1vVel+xvPLnMAmzzUXALqCCGpkwggNZMIIC36ADAgECAhAPuKdAuRWN
 # A1FDvFnZ8EApMAoGCCqGSM49BAMDMGExCzAJBgNVBAYTAlVTMRUwEwYDVQQKEwxE
 # aWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5jb20xIDAeBgNVBAMT
 # F0RpZ2lDZXJ0IEdsb2JhbCBSb290IEczMB4XDTIxMDQyOTAwMDAwMFoXDTM2MDQy
@@ -727,24 +788,24 @@ Catch {
 # YWwgRzMgQ29kZSBTaWduaW5nIEVDQyBTSEEzODQgMjAyMSBDQTECEA1KNNqGkI/A
 # Eyy8gTeTryQwDQYJYIZIAWUDBAIBBQCggYQwGAYKKwYBBAGCNwIBDDEKMAigAoAA
 # oQKAADAZBgkqhkiG9w0BCQMxDAYKKwYBBAGCNwIBBDAcBgorBgEEAYI3AgELMQ4w
-# DAYKKwYBBAGCNwIBFTAvBgkqhkiG9w0BCQQxIgQgd5qUV7kLkCKzY7b+84Q0qshn
-# I1mK+BcPCcNhpDMsaMcwCwYHKoZIzj0CAQUABEcwRQIhAOF24xcZgqAfzw0wj6VR
-# cs8NDRfXzj7o99TM8CNQSkE4AiBxu7ECBpJvaDE3OlufIYVSptMnI8ZnGx7T6WBR
-# xQzyFqGCAyYwggMiBgkqhkiG9w0BCQYxggMTMIIDDwIBATB9MGkxCzAJBgNVBAYT
+# DAYKKwYBBAGCNwIBFTAvBgkqhkiG9w0BCQQxIgQgQUlItP60RDyn/aFPIu9vZPvI
+# jmd2cTldd2i7oTNFRGQwCwYHKoZIzj0CAQUABEcwRQIhAM5BXvM86YrAlZlnBEvL
+# EW0FjLQGITkyExOh85uGMNh3AiBqNuZmlYqOm3y4qjdaKuhHC1zpAg6qDDTIRmBj
+# eLEno6GCAyYwggMiBgkqhkiG9w0BCQYxggMTMIIDDwIBATB9MGkxCzAJBgNVBAYT
 # AlVTMRcwFQYDVQQKEw5EaWdpQ2VydCwgSW5jLjFBMD8GA1UEAxM4RGlnaUNlcnQg
 # VHJ1c3RlZCBHNCBUaW1lU3RhbXBpbmcgUlNBNDA5NiBTSEEyNTYgMjAyNSBDQTEC
 # EAqA7xhLjfEFgtHEdqeVdGgwDQYJYIZIAWUDBAIBBQCgaTAYBgkqhkiG9w0BCQMx
-# CwYJKoZIhvcNAQcBMBwGCSqGSIb3DQEJBTEPFw0yNTExMTMyMjU1MDBaMC8GCSqG
-# SIb3DQEJBDEiBCBE7Y4R6W99+Ja+lms27oPSBHIbOYIgbXltf30j0fJBCTANBgkq
-# hkiG9w0BAQEFAASCAgBX6yykxBSGZlYUWs0QdFgZLEfgIpWt5SXdiNxvuzYbDpyz
-# N8Ph2HplubTbe6bGhBQUw0updRLLGoE5KVwTooleLKdZoiRXvH9oNQb8IA/BiInM
-# 4roHcVaJvnsivVy7csBeOvi/D/UkGhy8lgLJeioXM9EUxMa1Tzx9/PBKLDWh2ypw
-# l76HuCH2Pj8r+PRgPfXvrUhkjpVlsm+Nl1D5ibRXAtjZZlpONfSeHtZRrjSOF0kM
-# v9OFS/uxy++shLlzHSvn8CHiBkZAQ4QddnCWQ/ULppQRb1kWkIuAZaASbuBOAAXF
-# G/PItFVNZwdJ5nMMw2DCLw7wf0oZFgY0iSDoI28FziLbHTziR6RHsRW4C1hZmjSL
-# Lsoa2c7bJwJ2bbw39D7mefTK1mmN/B0u2JcDmykFNOWVvyQCrTJdzuJPEXFmEEfw
-# EJzk2W806iXm24h7UuxQTCpiv6X/R72GKltfMMCv9qtt1Ew1PFWIFJlFb5bBYLM4
-# vkZXVxKOZBexoRSDOSdw/54hYBLXVEdBZU5/DIaRedk3GBOA9m+JZr1oJTavV3Pc
-# oGmfx+eqeALEtvQLSPZgieVkKMVPrg684avsoXlCyxD6qjGCCe+2KuilJHLFwkSw
-# 44fGrewNi4NQ6iZNbMkStmGYWeP+/R30mV75YNvw5LZRRqVzm+u5fbQvnadqpg==
+# CwYJKoZIhvcNAQcBMBwGCSqGSIb3DQEJBTEPFw0yNTExMTUyMTQyMDdaMC8GCSqG
+# SIb3DQEJBDEiBCBsJ0KNh3Z4tDW14Wq6fQwBZfs2bkFOoZZ1or43vGNvczANBgkq
+# hkiG9w0BAQEFAASCAgBmin2UvRNBDzYaOvYXJjmK46AxtlHZcq8GIICob48y/9/I
+# nUau/yuZu3xTdNV45Awf2iUjUxHjt15ERtXobcAnixEcLX7E9t7/V0ovZrkxBlS3
+# lyDI5XKN7RNYMtPtd34t8Yd+NEA3oRkBkXH8gzlveL+9ZbF1DWRyF+GktXvxusxU
+# oMC3YySzLU4N/YGvd68NNE+XPDhbgjjtSlTYpBmucT87GC5I454yuAwcqO0fg5De
+# 1KKFy2LQ7B9r1+v0ktfRPm4cU1UA1+MR2PVo9t0WJQ0s3C5LdXNzxtCc1kL4jpPu
+# M7WNrpRLwXNUAizfTO5mpAupV4ZSPJUyLNhE5ABys2cg6+arpftYH2+quNDou7iD
+# X8/D9/Z/xRrgtCdghUIkfAljJbo5p9zgMGkhod7Z1WYOEfZKtb6kPamsPE59m4nx
+# PLR/eQ2FSJ+k+/L57FJh3/YQXVxgwjDGKYzdG/nO2fJyDkeKeB/zRfKFOdg0lk2/
+# zgsezPvYA0C9UEIkoPeJ5D3onEdhCuAAoKaSIo0R16DBe62cR6rtr1nj92XIiRK+
+# mHyR4J9TJ0Qr/Deosvv2ZKfAcNkRySiqhQCbUPFgAwtiuoVRjmGUca1KOVUn9nLk
+# g47Q3oQoGEVfq/VWQPAuofRoZoaHsMTXG0r1sEXzKEb/A9lpU+2/y7zZ0DlgYQ==
 # SIG # End signature block
