@@ -37,15 +37,28 @@
 .PARAMETER OutPath
     Optional path to a folder where certificates will be saved. If not specified when using -OutFile, files are saved to the script's directory.
 
+.PARAMETER IncludeHashes
+    Switch to include hash entries (SHA256, SHA1) in the output. By default, only certificates are displayed. Use this switch to also display hash-based signatures found in the signature database.
+
 .EXAMPLE
     .\Get-UEFICertificate.ps1
 
-    Returns all certificate objects (PK, KEK, and DB) without saving to files.
+    Returns all certificate objects (PK, KEK, and DB) without saving to files. Hashes are excluded by default.
 
 .EXAMPLE
     .\Get-UEFICertificate.ps1 -CertificateType All
 
-    Explicitly returns all certificate objects (PK, KEK, and DB) without saving to files.
+    Explicitly returns all certificate objects (PK, KEK, and DB) without saving to files. Hashes are excluded by default.
+
+.EXAMPLE
+    .\Get-UEFICertificate.ps1 -IncludeHashes
+
+    Returns all certificate objects and hash entries (PK, KEK, and DB) without saving to files.
+
+.EXAMPLE
+    .\Get-UEFICertificate.ps1 -CertificateType DB -IncludeHashes
+
+    Returns only the signature database (DB) entries including both certificates and hashes.
 
 .EXAMPLE
     .\Get-UEFICertificate.ps1 -CertificateType PK
@@ -102,7 +115,8 @@ Param (
     [String[]]$CertificateType = 'All',
     [Switch]$OutFile,
     [Parameter(Position = 0)]
-    [String]$OutPath
+    [String]$OutPath,
+    [Switch]$IncludeHashes
 
 )
 
@@ -608,6 +622,16 @@ Try {
                         }
 
                     }
+
+                }
+
+                # Skip hashes unless -IncludeHashes is specified
+                $IsHash = $CertInfo.Subject -in @('SHA256 Hash', 'SHA1 Hash')
+
+                If ($IsHash -and -not $IncludeHashes) {
+
+                    Write-Verbose "Skipping hash entry (use -IncludeHashes to display): $($CertInfo.Subject)"
+                    Continue
 
                 }
 
