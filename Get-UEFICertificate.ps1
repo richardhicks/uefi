@@ -32,10 +32,10 @@
     Specifies which certificate type(s) to retrieve. Valid values are 'All', 'PK', 'KEK', and 'DB'. Use 'All' to retrieve all certificate types, or specify individual types. Multiple values can be specified as an array. If not specified, 'All' is used by default.
 
 .PARAMETER OutFile
-    Switch to enable saving certificates to files in base64 format. Files are named pkcert.cer, kekcert.cer, and dbcert.cer (with numeric suffixes if multiple certificates exist).
+    Switch to enable saving certificates to files. When specified, certificates are saved to the folder specified by -OutPath. If -OutPath is not provided, files are saved to the user's temp directory ($env:temp). Files are named pkcert.cer, kekcert.cer, and dbcert.cer (with numeric suffixes if multiple certificates exist). Only certificates are saved; hashes are excluded from file output.
 
 .PARAMETER OutPath
-    Optional path to a folder where certificates will be saved. If not specified when using -OutFile, files are saved to the script's directory.
+    Optional path to a folder where certificates will be saved when -OutFile is used. If not specified, certificates are saved to $env:temp by default.
 
 .PARAMETER IncludeHashes
     Switch to include hash entries (SHA256, SHA1) in the output. By default, only certificates are displayed. Use this switch to also display hash-based signatures found in the signature database.
@@ -71,19 +71,19 @@
     Returns only the PK and KEK certificates.
 
 .EXAMPLE
-    .\Get-UEFICertificate.ps1 -CertificateType DB -OutFile
-
-    Returns only the signature database (DB) certificates and saves them as base64-encoded .cer files in the script's directory.
-
-.EXAMPLE
     .\Get-UEFICertificate.ps1 -OutFile
 
-    Returns all certificate objects and saves them as base64-encoded .cer files in the script's directory.
+    Returns all certificate objects and saves them as base64-encoded .cer files in the user's temp directory.
 
 .EXAMPLE
     .\Get-UEFICertificate.ps1 -OutFile -OutPath 'C:\Temp\UEFICertificates'
 
     Returns all certificate objects and saves them as base64-encoded .cer files in the specified folder.
+
+.EXAMPLE
+    .\Get-UEFICertificate.ps1 -CertificateType DB -OutFile -OutPath 'C:\SecureBoot'
+
+    Returns only the signature database (DB) certificates and saves them to C:\SecureBoot directory.
 
 .INPUTS
     None.
@@ -114,7 +114,6 @@ Param (
     [Alias('Type')]
     [String[]]$CertificateType = 'All',
     [Switch]$OutFile,
-    [Parameter(Position = 0)]
     [String]$OutPath,
     [Switch]$IncludeHashes
 
@@ -264,40 +263,31 @@ Try {
 
     Write-Verbose "Secure Boot Status: $SecureBootStatus."
 
-    # Determine output directory if -OutFile is used
+    # Determine output directory if -OutFile switch is used
     $OutputDirectory = $Null
     If ($OutFile) {
 
-        # If -OutPath is provided, use it; otherwise use script directory
+        # Use OutPath if provided, otherwise default to temp directory
         If ([String]::IsNullOrWhiteSpace($OutPath)) {
 
-            $OutputDirectory = If ($PSScriptRoot) {
-
-                $PSScriptRoot
-
-            }
-
-            Else {
-
-                (Get-Location).Path
-
-            }
-
-            Write-Verbose "Using script directory for output: $OutputDirectory"
+            $OutputDirectory = $env:temp
+            Write-Verbose "Using default temp directory for output: $OutputDirectory"
 
         }
-
         Else {
 
+            # Use provided path
             $OutputDirectory = $OutPath
 
-        }
+            # Check if path looks like a file (has an extension)
+            If ([System.IO.Path]::HasExtension($OutputDirectory)) {
 
-        # Check if path looks like a file (has an extension)
-        If ([System.IO.Path]::HasExtension($OutputDirectory)) {
+                Write-Warning 'OutPath must be a folder path, not a file path. Please provide a folder path without a filename.'
+                Exit 1
 
-            Write-Warning 'OutPath must be a folder path, not a file path. Please provide a folder path without a filename.'
-            Exit 1
+            }
+
+            Write-Verbose "Using output directory: $OutputDirectory"
 
         }
 
@@ -686,8 +676,8 @@ Try {
 
                 $Results += $ResultObj
 
-                # Handle -OutFile switch
-                If ($OutputDirectory) {
+                # Handle -OutFile switch (skip hashes)
+                If ($OutputDirectory -and -not $IsHash) {
 
                     # Determine filename based on certificate type and count
                     If ($CertType.Name -eq 'PK') {
