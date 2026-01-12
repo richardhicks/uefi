@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 1.2
+.VERSION 1.2.1
 
 .GUID 7c06efd4-2530-487d-b92c-d5874d0b53b3
 
@@ -8,7 +8,7 @@
 
 .COMPANYNAME Richard M. Hicks Consulting, Inc.
 
-.COPYRIGHT Copyright (C) 2025 Richard M. Hicks Consulting, Inc. All Rights Reserved.
+.COPYRIGHT Copyright (C) 2026 Richard M. Hicks Consulting, Inc. All Rights Reserved.
 
 .LICENSE Licensed under the MIT License. See LICENSE file in the project root for full license information.
 
@@ -95,9 +95,9 @@
     https://github.com/richardhicks/uefi/Get-UEFICertificate.ps1
 
 .NOTES
-    Version:        1.2
+    Version:        1.2.1
     Creation Date:  November 13, 2025
-    Last Updated:   November 17, 2025
+    Last Updated:   January 12, 2026
     Author:         Richard Hicks
     Organization:   Richard M. Hicks Consulting, Inc.
     Contact:        rich@richardhicks.com
@@ -262,6 +262,13 @@ Try {
     }
 
     Write-Verbose "Secure Boot Status: $SecureBootStatus."
+
+    # Warn if Secure Boot is not enabled
+    If (-not $SecureBootStatus) {
+
+        Write-Warning 'Secure Boot is not enabled on this system. It must be enabled to successfully update UEFI Secure Boot certificates.'
+
+    }
 
     # Determine output directory if -OutFile switch is used
     $OutputDirectory = $Null
@@ -789,10 +796,10 @@ Catch {
 }
 
 # SIG # Begin signature block
-# MIIf2QYJKoZIhvcNAQcCoIIfyjCCH8YCAQExDzANBglghkgBZQMEAgEFADB5Bgor
+# MIIf2wYJKoZIhvcNAQcCoIIfzDCCH8gCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCCY52OakjGFIahp
-# DTPCCOvjTTQ0yBc+MT8u5GULy+o2e6CCGpkwggNZMIIC36ADAgECAhAPuKdAuRWN
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCBN2tBc6MqkrGt6
+# AD6xmBy1bHbbeClUoBoiA9bfP5XMX6CCGpkwggNZMIIC36ADAgECAhAPuKdAuRWN
 # A1FDvFnZ8EApMAoGCCqGSM49BAMDMGExCzAJBgNVBAYTAlVTMRUwEwYDVQQKEwxE
 # aWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5jb20xIDAeBgNVBAMT
 # F0RpZ2lDZXJ0IEdsb2JhbCBSb290IEczMB4XDTIxMDQyOTAwMDAwMFoXDTM2MDQy
@@ -934,29 +941,29 @@ Catch {
 # roancJIFcbojBcxlRcGG0LIhp6GvReQGgMgYxQbV1S3CrWqZzBt1R9xJgKf47Cdx
 # VRd/ndUlQ05oxYy2zRWVFjF7mcr4C34Mj3ocCVccAvlKV9jEnstrniLvUxxVZE/r
 # ptb7IRE2lskKPIJgbaP5t2nGj/ULLi49xTcBZU8atufk+EMF/cWuiC7POGT75qaL
-# 6vdCvHlshtjdNXOCIUjsarfNZzGCBJYwggSSAgEBMHgwZDELMAkGA1UEBhMCVVMx
+# 6vdCvHlshtjdNXOCIUjsarfNZzGCBJgwggSUAgEBMHgwZDELMAkGA1UEBhMCVVMx
 # FzAVBgNVBAoTDkRpZ2lDZXJ0LCBJbmMuMTwwOgYDVQQDEzNEaWdpQ2VydCBHbG9i
 # YWwgRzMgQ29kZSBTaWduaW5nIEVDQyBTSEEzODQgMjAyMSBDQTECEA1KNNqGkI/A
 # Eyy8gTeTryQwDQYJYIZIAWUDBAIBBQCggYQwGAYKKwYBBAGCNwIBDDEKMAigAoAA
 # oQKAADAZBgkqhkiG9w0BCQMxDAYKKwYBBAGCNwIBBDAcBgorBgEEAYI3AgELMQ4w
-# DAYKKwYBBAGCNwIBFTAvBgkqhkiG9w0BCQQxIgQgy+B4RoEngxfQGsElmT0cRhE5
-# H6mau8qiSPUrTlH9LEAwCwYHKoZIzj0CAQUABEYwRAIgOZ1L5HNMu/UNps5ILKlT
-# UaB1YZSjPoZ4lrHDJnZ+DAsCIBo0CChLD07XvDzGQ/2II9Qt9UWOh9D7xDxDdE05
-# GyK9oYIDJjCCAyIGCSqGSIb3DQEJBjGCAxMwggMPAgEBMH0waTELMAkGA1UEBhMC
-# VVMxFzAVBgNVBAoTDkRpZ2lDZXJ0LCBJbmMuMUEwPwYDVQQDEzhEaWdpQ2VydCBU
-# cnVzdGVkIEc0IFRpbWVTdGFtcGluZyBSU0E0MDk2IFNIQTI1NiAyMDI1IENBMQIQ
-# CoDvGEuN8QWC0cR2p5V0aDANBglghkgBZQMEAgEFAKBpMBgGCSqGSIb3DQEJAzEL
-# BgkqhkiG9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTI1MTExNzIxMzEwNlowLwYJKoZI
-# hvcNAQkEMSIEIDHcq19V57KSBCIkUlpdXLA7RNuSuQpIba3cMqLGveL6MA0GCSqG
-# SIb3DQEBAQUABIICAADRRkYOrQvqcum4Y9/1W/YmRtNqL56X+ngFTdS86wr9KsXE
-# yR93znlUYMLqI+9d+XYI0Bro1JdLzReX09NeFbMAnbA8mZtb6gD7irvJ1iT5W9Wm
-# swgpfD+mUbZlUKBg/HahM1/vJyU8EU2jjzEGqeZ521E4kNLvkW/Jt44EQ7IPDuRe
-# NWo/l99+g0UbOht3N6plqTY5MbmrsgRgmRZdDbb3sYvj4UwlDaqaFT1k0GuPox8l
-# S7XCTqZSlZijNClUgPGBjAcjo+Ird+g6CxjQDSe21LUxaDJyYghX6X3zEETTu4X4
-# JM7irpYU1o0E9qkf9Trje3XWYnHprJoajs1Z96LBYQIuEmsiwnro9ufBAMKhXfao
-# oS1qvsoE0+fK7kKs3Q6L+YBzQwFC4sByH2GusokUU7it6NDOLZrP0RG/MM7dyZ0c
-# YYVH0ujS7zlz2H6l2vWjPTcQkrSvFTkINGDAaClFskMv5CJSesdgeyhg3yEMpnM/
-# CKZ36STxlDSWTMsS1ENryE7qOprF3gCWns/UTY94PI0w0r/+7Ngm3MfMw+f00wII
-# IGGCsAxBi2tre+AXv7fcZ0H2ghVauj4sOk9JyJawoCy7fNf5XVSk4t0pys26yQ46
-# fVRXceu4QHxE45kD6wHakwqCxb9UqSrRgMmCnSPqBz4cy7EDyz7qXS8w/Uwm
+# DAYKKwYBBAGCNwIBFTAvBgkqhkiG9w0BCQQxIgQgCqkLw6F1v7ASqOCutlPWKDz4
+# kjmwcW0CHawchLzFYAUwCwYHKoZIzj0CAQUABEgwRgIhAJdhSgIXIF+HI2Cxj/lP
+# 4WWBYmxjMP7KeF3PlWlImIghAiEA8KHgUXvSx35KC0O+Hp1BiNaxSo2vI7cyf+Ns
+# ErklAGihggMmMIIDIgYJKoZIhvcNAQkGMYIDEzCCAw8CAQEwfTBpMQswCQYDVQQG
+# EwJVUzEXMBUGA1UEChMORGlnaUNlcnQsIEluYy4xQTA/BgNVBAMTOERpZ2lDZXJ0
+# IFRydXN0ZWQgRzQgVGltZVN0YW1waW5nIFJTQTQwOTYgU0hBMjU2IDIwMjUgQ0Ex
+# AhAKgO8YS43xBYLRxHanlXRoMA0GCWCGSAFlAwQCAQUAoGkwGAYJKoZIhvcNAQkD
+# MQsGCSqGSIb3DQEHATAcBgkqhkiG9w0BCQUxDxcNMjYwMTEyMjIyMzQ4WjAvBgkq
+# hkiG9w0BCQQxIgQg70gHYlfHg0jGJ65xaAHsEF2V2LkTbCMHO3rTvaQ2i+MwDQYJ
+# KoZIhvcNAQEBBQAEggIAep3MqHyQMMX54NxqScoOl+sJxqj6Mc7Or+bftDlKJSjo
+# OQlicI37DinaAKJdmHozsrjJWtaunLZQZot5hfmk+9FbgDk55a0iY3CVfUxCHGzH
+# js7nRyejjMt/C9EkhTA5yjPH+6ldxOp8KSN+jiACZygOyUYJ/t2lFpEAB05MkImc
+# pN84mKlmYKMx3T+1vbxo68KHsodz087C9upbLFnSyB1FYU2+FSKVEM0NVFO/D36A
+# 3Jb93EtvUsdbfK9r/BnIQ2XialS4otb2oCGeqsMQc6XEq18jKkm+hrviZVGUosRo
+# PKXi8eztWhx4e/DIFba6iyNsrFFFbfYJzMjMOHOZ8rNF2Zs+CS47GQM5u//O43NO
+# ldpE8EnNYYocm5cnJnP5z6rDIyKDADGC3TLNT6sq+Kmq31/oHa1bTOLV321uDnG2
+# PLDQMFvqTdr1KK54/nwOuDyvXAfw36rpJrOGgIBnQWb1gmp/cF2V8iSe3lW8bl1W
+# cpCdSvLlH9/wKmmS7FlP0x1Js7dX2wc/+sVlL/XdmAviHT8yCj9Lc8scQbGPM/U3
+# GlZhO9pnRw6PwTv9hxAG/HtdgdTzWzeVYlleljMxVm2NEndkgZA4tPCSmaCLkbMP
+# evSfxgKJn/b9VV3R+cu13AEcOq6z4ocPPKxGhlMkePNtxtTSucZGlrATpnNJDeo=
 # SIG # End signature block
