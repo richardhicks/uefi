@@ -243,6 +243,7 @@ This project is licensed under the MIT License - see the [LICENSE](https://githu
 
 - Website: [https://www.richardhicks.com/](https://www.richardhicks.com/)
 - GitHub: [@richardhicks](https://github.com/richardhicks)
+- X: [@richardhicks](https://x.com/richardhicks)
 
 ---
 
