@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 1.2.1
+.VERSION 1.3
 
 .GUID 7c06efd4-2530-487d-b92c-d5874d0b53b3
 
@@ -16,26 +16,26 @@
 
 .PROJECTURI https://github.com/richardhicks/uefi/
 
-.TAGS UEFI, SecureBoot, Certificates, PK, KEK, DB
+.TAGS UEFI, SecureBoot, Certificates, PK, KEK, DB, DBX
 
 #>
 
 <#
 
 .SYNOPSIS
-    Reads Platform Key (PK), Key Exchange Key (KEK), and signature database (DB) certificates from UEFI.
+    Reads Platform Key (PK), Key Exchange Key (KEK), signature database (DB), and forbidden signatures database (DBX) entries from UEFI.
 
 .DESCRIPTION
-    This script retrieves and displays Secure Boot certificates (PK, KEK, and DB) from UEFI firmware and optionally saves them to files.
+    This script retrieves and displays Secure Boot certificates and signatures (PK, KEK, DB, and DBX) from UEFI firmware and optionally saves them to files. The DBX (forbidden signatures) database contains both certificates and hashes that are blocked by Secure Boot.
 
 .PARAMETER CertificateType
-    Specifies which certificate type(s) to retrieve. Valid values are 'All', 'PK', 'KEK', and 'DB'. Use 'All' to retrieve all certificate types, or specify individual types. Multiple values can be specified as an array. If not specified, 'All' is used by default.
+    Specifies which certificate type(s) to retrieve. Valid values are 'All', 'PK', 'KEK', 'DB', and 'DBX'. Use 'All' to retrieve PK, KEK, and DB certificates, or specify individual types. Multiple values can be specified as an array. If not specified, 'All' is used by default. Note: DBX must be explicitly specified and is not included in 'All'.
 
 .PARAMETER OutFile
-    Switch to enable saving certificates to files. When specified, certificates are saved to the folder specified by -OutPath. If -OutPath is not provided, files are saved to the user's temp directory ($env:temp). Files are named pkcert.cer, kekcert.cer, and dbcert.cer (with numeric suffixes if multiple certificates exist). Only certificates are saved; hashes are excluded from file output.
+    Switch to enable saving certificates to files. When specified, certificates are saved to the folder specified by -OutPath. If -OutPath is not provided, files are saved to the current working directory. Files are named pkcert.cer, kekcert.cer, dbcert.cer, and dbxcert.cer (with numeric suffixes if multiple certificates exist). When -IncludeHashes is also specified, DB and DBX hashes are written to a single text file each (dbhashes.txt, dbxhashes.txt) containing one hash per line.
 
 .PARAMETER OutPath
-    Optional path to a folder where certificates will be saved when -OutFile is used. If not specified, certificates are saved to $env:temp by default.
+    Optional path to a folder where certificates will be saved when -OutFile is used. If not specified, certificates are saved to the current working directory by default.
 
 .PARAMETER IncludeHashes
     Switch to include hash entries (SHA256, SHA1) in the output. By default, only certificates are displayed. Use this switch to also display hash-based signatures found in the signature database.
@@ -73,7 +73,7 @@
 .EXAMPLE
     .\Get-UEFICertificate.ps1 -OutFile
 
-    Returns all certificate objects and saves them as base64-encoded .cer files in the user's temp directory.
+    Returns all certificate objects and saves them as base64-encoded .cer files in the current working directory.
 
 .EXAMPLE
     .\Get-UEFICertificate.ps1 -OutFile -OutPath 'C:\Temp\UEFICertificates'
@@ -85,6 +85,21 @@
 
     Returns only the signature database (DB) certificates and saves them to C:\SecureBoot directory.
 
+.EXAMPLE
+    .\Get-UEFICertificate.ps1 -CertificateType DBX
+
+    Returns only the forbidden signatures database (DBX) certificates. Hashes are excluded by default.
+
+.EXAMPLE
+    .\Get-UEFICertificate.ps1 -CertificateType DBX -IncludeHashes
+
+    Returns all forbidden signatures database (DBX) entries including both certificates and hashes.
+
+.EXAMPLE
+    .\Get-UEFICertificate.ps1 -CertificateType DBX -IncludeHashes -OutFile -OutPath 'C:\SecureBoot'
+
+    Returns all DBX entries and saves certificates as individual .cer files and all hashes to a single dbxhashes.txt file in the specified folder.
+
 .INPUTS
     None.
 
@@ -95,9 +110,9 @@
     https://github.com/richardhicks/uefi/Get-UEFICertificate.ps1
 
 .NOTES
-    Version:        1.2.1
+    Version:        1.3
     Creation Date:  November 13, 2025
-    Last Updated:   January 12, 2026
+    Last Updated:   February 9, 2026
     Author:         Richard Hicks
     Organization:   Richard M. Hicks Consulting, Inc.
     Contact:        rich@richardhicks.com
@@ -110,7 +125,7 @@
 Param (
 
     [Parameter()]
-    [ValidateSet('All', 'PK', 'KEK', 'DB')]
+    [ValidateSet('All', 'PK', 'KEK', 'DB', 'DBX')]
     [Alias('Type')]
     [String[]]$CertificateType = 'All',
     [Switch]$OutFile,
@@ -274,11 +289,11 @@ Try {
     $OutputDirectory = $Null
     If ($OutFile) {
 
-        # Use OutPath if provided, otherwise default to temp directory
+        # Use OutPath if provided, otherwise default to current directory
         If ([String]::IsNullOrWhiteSpace($OutPath)) {
 
-            $OutputDirectory = $env:temp
-            Write-Verbose "Using default temp directory for output: $OutputDirectory"
+            $OutputDirectory = (Get-Location).Path
+            Write-Verbose "Using current directory for output: $OutputDirectory"
 
         }
         Else {
@@ -338,6 +353,9 @@ Try {
     $PkCount = 0
     $KekCount = 0
     $DbCount = 0
+    $DbxCertCount = 0
+    $DbHashes = @()
+    $DbxHashes = @()
     $SavedFiles = @()
 
     # Define all available certificates
@@ -346,13 +364,15 @@ Try {
         @{ Name = 'PK'; Description = 'Platform Key'; VariableName = 'pk' }
         @{ Name = 'KEK'; Description = 'Key Exchange Key'; VariableName = 'kek' }
         @{ Name = 'DB'; Description = 'Signature Database'; VariableName = 'db' }
+        @{ Name = 'DBX'; Description = 'Forbidden Signatures Database'; VariableName = 'dbx' }
 
     )
 
     # Filter based on CertificateType parameter
     If ($CertificateType -contains 'All') {
 
-        $CertTypes = $AllCertTypes
+        # 'All' includes PK, KEK, and DB. Use -Type DBX to explicitly include the forbidden signatures database.
+        $CertTypes = $AllCertTypes | Where-Object { $_.Name -ne 'DBX' }
 
     }
 
@@ -683,69 +703,103 @@ Try {
 
                 $Results += $ResultObj
 
-                # Handle -OutFile switch (skip hashes)
-                If ($OutputDirectory -and -not $IsHash) {
+                # Handle -OutFile switch
+                If ($OutputDirectory) {
 
-                    # Determine filename based on certificate type and count
-                    If ($CertType.Name -eq 'PK') {
+                    # Collect hashes for batch writing to a single file per type (DB, DBX)
+                    If ($IsHash -and $CertType.Name -eq 'DB') {
 
-                        $PkCount++
-                        $Filename = If ($PkCount -eq 1) {
+                        $DbHashes += $CertInfo.Thumbprint
 
-                            'pkcert.cer'
+                    }
+
+                    ElseIf ($IsHash -and $CertType.Name -eq 'DBX') {
+
+                        $DbxHashes += $CertInfo.Thumbprint
+
+                    }
+
+                    ElseIf (-not $IsHash) {
+
+                        # Determine filename based on certificate type and count
+                        If ($CertType.Name -eq 'PK') {
+
+                            $PkCount++
+                            $Filename = If ($PkCount -eq 1) {
+
+                                'pkcert.cer'
+
+                            }
+
+                            Else {
+
+                                "pkcert$PkCount.cer"
+
+                            }
+
+                        }
+
+                        ElseIf ($CertType.Name -eq 'KEK') {
+
+                            $KekCount++
+                            $Filename = If ($KekCount -eq 1) {
+
+                                'kekcert.cer'
+
+                            }
+
+                            Else {
+
+                                "kekcert$KekCount.cer"
+
+                            }
+
+                        }
+
+                        ElseIf ($CertType.Name -eq 'DBX') {
+
+                            $DbxCertCount++
+                            $Filename = If ($DbxCertCount -eq 1) {
+
+                                'dbxcert.cer'
+
+                            }
+
+                            Else {
+
+                                "dbxcert$DbxCertCount.cer"
+
+                            }
 
                         }
 
                         Else {
 
-                            "pkcert$PkCount.cer"
+                            $DbCount++
+                            $Filename = If ($DbCount -eq 1) {
+
+                                'dbcert.cer'
+
+                            }
+
+                            Else {
+
+                                "dbcert$DbCount.cer"
+
+                            }
 
                         }
+
+                        $Filepath = Join-Path $OutputDirectory $Filename
+
+                        # Save in proper PEM format using helper function
+                        $Pem = ConvertTo-PemFormat -CertificateData $Sig.CertificateData
+                        [System.IO.File]::WriteAllText($Filepath, $Pem)
+
+                        # Store filepath for display at end
+                        $SavedFiles += $Filepath
 
                     }
-
-                    ElseIf ($CertType.Name -eq 'KEK') {
-
-                        $KekCount++
-                        $Filename = If ($KekCount -eq 1) {
-
-                            'kekcert.cer'
-
-                        }
-
-                        Else {
-
-                            "kekcert$KekCount.cer"
-
-                        }
-
-                    }
-
-                    Else {
-
-                        $DbCount++
-                        $Filename = If ($DbCount -eq 1) {
-
-                            'dbcert.cer'
-
-                        }
-
-                        Else {
-
-                            "dbcert$DbCount.cer"
-
-                        }
-
-                    }
-
-                    $Filepath = Join-Path $OutputDirectory $Filename
-
-                    # Save in proper PEM format using helper function
-                    $Pem = ConvertTo-PemFormat -CertificateData $Sig.CertificateData
-                    [System.IO.File]::WriteAllText($Filepath, $Pem)
-
-                    # Store filepath for display at end
-                    $SavedFiles += $Filepath
 
                 }
 
@@ -758,6 +812,25 @@ Try {
             Write-Warning "Error reading $($CertType.Name): $($_.Exception.Message)"
 
         }
+
+    }
+
+    # Write collected hashes to single files (one file per database type)
+    If ($OutputDirectory -and $DbHashes.Count -gt 0) {
+
+        $Filepath = Join-Path $OutputDirectory 'dbhashes.txt'
+        [System.IO.File]::WriteAllLines($Filepath, [String[]]$DbHashes)
+        Write-Verbose "Wrote $($DbHashes.Count) DB hash(es) to $Filepath"
+        $SavedFiles += $Filepath
+
+    }
+
+    If ($OutputDirectory -and $DbxHashes.Count -gt 0) {
+
+        $Filepath = Join-Path $OutputDirectory 'dbxhashes.txt'
+        [System.IO.File]::WriteAllLines($Filepath, [String[]]$DbxHashes)
+        Write-Verbose "Wrote $($DbxHashes.Count) DBX hash(es) to $Filepath"
+        $SavedFiles += $Filepath
 
     }
 
@@ -779,7 +852,17 @@ Try {
 
         ForEach ($File in $SavedFiles) {
 
-            Write-Output "Saved certificate to: $File"
+            If ($File -match '\.txt$') {
+
+                Write-Output "Saved hash to: $File"
+
+            }
+
+            Else {
+
+                Write-Output "Saved certificate to: $File"
+
+            }
 
         }
 
@@ -796,10 +879,10 @@ Catch {
 }
 
 # SIG # Begin signature block
-# MIIf2wYJKoZIhvcNAQcCoIIfzDCCH8gCAQExDzANBglghkgBZQMEAgEFADB5Bgor
+# MIIf2QYJKoZIhvcNAQcCoIIfyjCCH8YCAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCBN2tBc6MqkrGt6
-# AD6xmBy1bHbbeClUoBoiA9bfP5XMX6CCGpkwggNZMIIC36ADAgECAhAPuKdAuRWN
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCDluS/DSfbEIcrk
+# bu3+Yzs5hVX11nwrwEpDk2UOnA0EVaCCGpkwggNZMIIC36ADAgECAhAPuKdAuRWN
 # A1FDvFnZ8EApMAoGCCqGSM49BAMDMGExCzAJBgNVBAYTAlVTMRUwEwYDVQQKEwxE
 # aWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5jb20xIDAeBgNVBAMT
 # F0RpZ2lDZXJ0IEdsb2JhbCBSb290IEczMB4XDTIxMDQyOTAwMDAwMFoXDTM2MDQy
@@ -941,29 +1024,29 @@ Catch {
 # roancJIFcbojBcxlRcGG0LIhp6GvReQGgMgYxQbV1S3CrWqZzBt1R9xJgKf47Cdx
 # VRd/ndUlQ05oxYy2zRWVFjF7mcr4C34Mj3ocCVccAvlKV9jEnstrniLvUxxVZE/r
 # ptb7IRE2lskKPIJgbaP5t2nGj/ULLi49xTcBZU8atufk+EMF/cWuiC7POGT75qaL
-# 6vdCvHlshtjdNXOCIUjsarfNZzGCBJgwggSUAgEBMHgwZDELMAkGA1UEBhMCVVMx
+# 6vdCvHlshtjdNXOCIUjsarfNZzGCBJYwggSSAgEBMHgwZDELMAkGA1UEBhMCVVMx
 # FzAVBgNVBAoTDkRpZ2lDZXJ0LCBJbmMuMTwwOgYDVQQDEzNEaWdpQ2VydCBHbG9i
 # YWwgRzMgQ29kZSBTaWduaW5nIEVDQyBTSEEzODQgMjAyMSBDQTECEA1KNNqGkI/A
 # Eyy8gTeTryQwDQYJYIZIAWUDBAIBBQCggYQwGAYKKwYBBAGCNwIBDDEKMAigAoAA
 # oQKAADAZBgkqhkiG9w0BCQMxDAYKKwYBBAGCNwIBBDAcBgorBgEEAYI3AgELMQ4w
-# DAYKKwYBBAGCNwIBFTAvBgkqhkiG9w0BCQQxIgQgCqkLw6F1v7ASqOCutlPWKDz4
-# kjmwcW0CHawchLzFYAUwCwYHKoZIzj0CAQUABEgwRgIhAJdhSgIXIF+HI2Cxj/lP
-# 4WWBYmxjMP7KeF3PlWlImIghAiEA8KHgUXvSx35KC0O+Hp1BiNaxSo2vI7cyf+Ns
-# ErklAGihggMmMIIDIgYJKoZIhvcNAQkGMYIDEzCCAw8CAQEwfTBpMQswCQYDVQQG
-# EwJVUzEXMBUGA1UEChMORGlnaUNlcnQsIEluYy4xQTA/BgNVBAMTOERpZ2lDZXJ0
-# IFRydXN0ZWQgRzQgVGltZVN0YW1waW5nIFJTQTQwOTYgU0hBMjU2IDIwMjUgQ0Ex
-# AhAKgO8YS43xBYLRxHanlXRoMA0GCWCGSAFlAwQCAQUAoGkwGAYJKoZIhvcNAQkD
-# MQsGCSqGSIb3DQEHATAcBgkqhkiG9w0BCQUxDxcNMjYwMTEyMjIyMzQ4WjAvBgkq
-# hkiG9w0BCQQxIgQg70gHYlfHg0jGJ65xaAHsEF2V2LkTbCMHO3rTvaQ2i+MwDQYJ
-# KoZIhvcNAQEBBQAEggIAep3MqHyQMMX54NxqScoOl+sJxqj6Mc7Or+bftDlKJSjo
-# OQlicI37DinaAKJdmHozsrjJWtaunLZQZot5hfmk+9FbgDk55a0iY3CVfUxCHGzH
-# js7nRyejjMt/C9EkhTA5yjPH+6ldxOp8KSN+jiACZygOyUYJ/t2lFpEAB05MkImc
-# pN84mKlmYKMx3T+1vbxo68KHsodz087C9upbLFnSyB1FYU2+FSKVEM0NVFO/D36A
-# 3Jb93EtvUsdbfK9r/BnIQ2XialS4otb2oCGeqsMQc6XEq18jKkm+hrviZVGUosRo
-# PKXi8eztWhx4e/DIFba6iyNsrFFFbfYJzMjMOHOZ8rNF2Zs+CS47GQM5u//O43NO
-# ldpE8EnNYYocm5cnJnP5z6rDIyKDADGC3TLNT6sq+Kmq31/oHa1bTOLV321uDnG2
-# PLDQMFvqTdr1KK54/nwOuDyvXAfw36rpJrOGgIBnQWb1gmp/cF2V8iSe3lW8bl1W
-# cpCdSvLlH9/wKmmS7FlP0x1Js7dX2wc/+sVlL/XdmAviHT8yCj9Lc8scQbGPM/U3
-# GlZhO9pnRw6PwTv9hxAG/HtdgdTzWzeVYlleljMxVm2NEndkgZA4tPCSmaCLkbMP
-# evSfxgKJn/b9VV3R+cu13AEcOq6z4ocPPKxGhlMkePNtxtTSucZGlrATpnNJDeo=
+# DAYKKwYBBAGCNwIBFTAvBgkqhkiG9w0BCQQxIgQgt/Ez6cy9NM1oyAb/BJ7u39pe
+# 4LTQvm5iouzeL3QUhscwCwYHKoZIzj0CAQUABEYwRAIgYPalqMR8/ihwS5WZoBVX
+# MAINRw6lGNw5jyCBj5HCuTkCIH/QAVxWmXGZgkTkCWj5Elr5/ZEqt8p8oRiwxxPI
+# XsZQoYIDJjCCAyIGCSqGSIb3DQEJBjGCAxMwggMPAgEBMH0waTELMAkGA1UEBhMC
+# VVMxFzAVBgNVBAoTDkRpZ2lDZXJ0LCBJbmMuMUEwPwYDVQQDEzhEaWdpQ2VydCBU
+# cnVzdGVkIEc0IFRpbWVTdGFtcGluZyBSU0E0MDk2IFNIQTI1NiAyMDI1IENBMQIQ
+# CoDvGEuN8QWC0cR2p5V0aDANBglghkgBZQMEAgEFAKBpMBgGCSqGSIb3DQEJAzEL
+# BgkqhkiG9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTI2MDIxMDAxNDgyOFowLwYJKoZI
+# hvcNAQkEMSIEII8Il6QZPYtJwM4H8jVSsSarXd1muh0cWz+SZP+aKk0CMA0GCSqG
+# SIb3DQEBAQUABIICAA7g+HvvPow7kzvpWoXKbIYgtXj8QBWswLNIDcqeh0IvFO9z
+# DnRJVLbC7I/tI2pjBc8ddoFRCWfluEYLZxrpXqrYApMPFRw5SE4HL7LryZY7FvcB
+# 4439g+nKKHIB2Qfvn9yEKECNKhbxSGlXBe38T69NQfRimIAbvnitWJkLALn7XyCz
+# zOW5oCNCxjOwO12rVItpapKmxAXFJYsZDg5co8exk+pu+mrM6LJst2jaKFluUQp5
+# 1EbpRueooUOkVxsgSelkCmk858vNw+UJnenvoFWyX6nAw8r5oEzWoLo/3xprPLfk
+# vcv/kCvRRDzgSKFhqWQ5uYXlAjyOG4SGlDDucSXjg0mzlVm7C4F7k2S6P1c0U3wJ
+# GdCHTFXQyFNi+XKkB2f8ZlNClFYtqgwm7rRAxA3f/qwJyU9ckoZwZ5pLKHSKBvRc
+# +oo6+qsElSaZa7qnGKk0shO4z5VT6UOWj8dyJWmMDQAkmwEBiFgcI7gEznVEFcA1
+# g0qHIGNaZ8bE/2jB8T7wF6xbHlAvzqd7XJpZFVlmI977EL1B8mNX/IdqEbh2WVcL
+# fpDH+DUUB+iFT8gE4Z/3EjKZDDlA8Uev1lPxlfoCbwVwLGcAmSGbeG9zCF9H2cIK
+# OIzIDBcYfWmVB5i9Q7rXn9/cqsEQZZn06dj8yoYjEOhJCsVqGrQe913tysCf
 # SIG # End signature block

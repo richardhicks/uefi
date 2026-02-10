@@ -2,9 +2,9 @@
 
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-blue.svg)](https://github.com/PowerShell/PowerShell)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/richardhicks/uefi/blob/main/LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.2.1-green.svg)](https://github.com/richardhicks/uefi/)
+[![Version](https://img.shields.io/badge/Version-1.3-green.svg)](https://github.com/richardhicks/uefi/)
 
-A PowerShell script for reading and exporting UEFI Secure Boot certificates directly from firmware. This tool retrieves Platform Key (PK), Key Exchange Key (KEK), and signature database (DB) certificates, providing detailed information about each certificate and optional export functionality.
+A PowerShell script for reading and exporting UEFI Secure Boot certificates and signatures directly from firmware. This tool retrieves Platform Key (PK), Key Exchange Key (KEK), signature database (DB), and forbidden signatures database (DBX) entries, providing detailed information about each certificate and optional export functionality.
 
 ## Overview
 
@@ -16,13 +16,16 @@ Secure Boot is a critical security feature in UEFI firmware that ensures only tr
 - Parsing EFI Signature List (ESL) format data
 - Displaying certificate details in a structured, readable format
 - Exporting certificates to PEM-encoded files for further analysis or backup
+- Retrieving forbidden signatures (DBX) including both certificates and hashes
 
 ## Features
 
-- **Comprehensive Certificate Retrieval** - Access PK, KEK, and DB certificates from UEFI firmware
+- **Comprehensive Certificate Retrieval** - Access PK, KEK, DB, and DBX certificates from UEFI firmware
+- **Forbidden Signatures Database (DBX)** - Retrieve blocked certificates and hashes from the DBX database
 - **Flexible Output** - View certificate details on screen or export to files
-- **Hash Support** - Optionally include SHA256 and SHA1 hash entries from the signature database
+- **Hash Support** - Optionally include SHA256 and SHA1 hash entries from the signature databases
 - **PEM Format Export** - Save certificates in industry-standard base64-encoded format
+- **Hash File Export** - Save hash entries to text files (one hash per line) when using `-OutFile` with `-IncludeHashes`
 - **Detailed Certificate Information** - View subject, issuer, thumbprint, validity dates, and serial numbers
 - **Secure Boot Status Check** - Automatically verifies Secure Boot availability and status
 
@@ -35,14 +38,21 @@ Secure Boot is a critical security feature in UEFI firmware that ensures only tr
 
 ## Installation
 
-### Option 1: Direct Download
+### Option 1: PowerShell Gallery (Recommended)
+
+```powershell
+# Install the script from the PowerShell Gallery
+Install-Script -Name Get-UEFICertificate -Scope CurrentUser
+```
+
+### Option 2: Direct Download
 
 ```powershell
 # Download the script directly from GitHub
 Invoke-WebRequest -Uri "https://github.com/richardhicks/uefi/raw/main/Get-UEFICertificate.ps1" -OutFile "Get-UEFICertificate.ps1"
 ```
 
-### Option 2: Clone the Repository
+### Option 3: Clone the Repository
 
 ```powershell
 git clone https://github.com/richardhicks/uefi.git
@@ -63,9 +73,9 @@ Retrieve all Secure Boot certificates:
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `-CertificateType` | String[] | Specifies certificate type(s) to retrieve. Valid values: `All`, `PK`, `KEK`, `DB`. Default: `All` |
-| `-OutFile` | Switch | Enables saving certificates to files |
-| `-OutPath` | String | Folder path for exported certificates. Default: `$env:temp` |
+| `-CertificateType` | String[] | Specifies certificate type(s) to retrieve. Valid values: `All`, `PK`, `KEK`, `DB`, `DBX`. Default: `All`. Note: `All` includes PK, KEK, and DB — DBX must be explicitly specified. |
+| `-OutFile` | Switch | Enables saving certificates to files. When combined with `-IncludeHashes`, hashes are written to text files (`dbhashes.txt`, `dbxhashes.txt`). |
+| `-OutPath` | String | Folder path for exported certificates. Default: current working directory. The directory is created automatically if it doesn't exist. |
 | `-IncludeHashes` | Switch | Includes SHA256/SHA1 hash entries in output |
 
 ### Examples
@@ -110,6 +120,24 @@ Retrieve all Secure Boot certificates:
 
 ```powershell
 .\Get-UEFICertificate.ps1 -CertificateType DB -OutFile -OutPath "C:\Backup\UEFI"
+```
+
+**Retrieve DBX (forbidden signatures) certificates:**
+
+```powershell
+.\Get-UEFICertificate.ps1 -CertificateType DBX
+```
+
+**Retrieve all DBX entries including hashes:**
+
+```powershell
+.\Get-UEFICertificate.ps1 -CertificateType DBX -IncludeHashes
+```
+
+**Export DBX entries with hashes to a specific folder:**
+
+```powershell
+.\Get-UEFICertificate.ps1 -CertificateType DBX -IncludeHashes -OutFile -OutPath "C:\SecureBoot"
 ```
 
 ## Common Scenarios
@@ -200,7 +228,7 @@ The script returns `PSCustomObject` instances with the following properties:
 
 | Property | Description |
 |----------|-------------|
-| `Type` | Certificate type (PK, KEK, or DB) |
+| `Type` | Certificate type (PK, KEK, DB, or DBX) |
 | `Description` | Human-readable description |
 | `Index` | Certificate index within its type |
 | `SignatureType` | UEFI signature type GUID |
@@ -228,6 +256,8 @@ $certs[0].SaveToFile("C:\Temp\certificate.cer")
 - **Secure Boot must be available** - The system must support UEFI Secure Boot
 - **Read-only operation** - This script only reads certificates; it does not modify Secure Boot configuration
 - **Hash entries excluded by default** - Use `-IncludeHashes` to display SHA256/SHA1 hash entries
+- **DBX not included in 'All'** - The forbidden signatures database (DBX) must be explicitly requested using `-CertificateType DBX`
+- **Hash file output** - When using `-OutFile` with `-IncludeHashes`, hash entries are saved to text files (`dbhashes.txt`, `dbxhashes.txt`) with one hash per line
 
 ## Contributing
 
