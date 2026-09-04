@@ -277,4 +277,4 @@ This project is licensed under the MIT License - see the [LICENSE](https://githu
 
 ---
 
-*Copyright (C) 2026 Richard M. Hicks Consulting, Inc. All Rights Reserved.*
+*Copyright (C) 2026 Richard M. Hicks Consulting, Inc.*
